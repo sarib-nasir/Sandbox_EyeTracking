@@ -1,0 +1,34 @@
+{
+    "name": "eye_tracking",
+    "maps": [
+        {
+            "name": "eyeTracking",
+            "id": "ca11d242-a980-4c0a-9af4-113c10a5562d",
+            "actions": [
+                {
+                    "name": "EyeGazePose",
+                    "type": "Value",
+                    "id": "44c97284-2495-45c2-ad45-da61b41a6ecd",
+                    "expectedControlType": "Pose",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": true
+                }
+            ],
+            "bindings": [
+                {
+                    "name": "",
+                    "id": "32e56884-3812-4209-8769-6dd37405aad8",
+                    "path": "<EyeGaze>/pose",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "EyeGazePose",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                }
+            ]
+        }
+    ],
+    "controlSchemes": []
+}
