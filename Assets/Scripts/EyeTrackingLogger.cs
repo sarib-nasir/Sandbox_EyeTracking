@@ -24,17 +24,30 @@ public class EyeTrackingLogger : MonoBehaviour
     [SerializeField] private InputActionReference eyePose;
 
     [Header("Logging Settings")]
-    [SerializeField] private float logIntervalSeconds = 0.05f; // 20Hz logging
+    [SerializeField] private float logIntervalSeconds = 0.05f; 
     [SerializeField] private string fileName = "eye_tracking_data";
 
     [Header("Fixation Settings")]
-    [SerializeField] private float fixationAngleThresholdDeg = 1.5f;  // gaze must stay within this cone
-    [SerializeField] private float fixationDurationThreshold = 0.15f; // seconds to confirm fixation
+    [SerializeField] private float fixationAngleThresholdDeg = 1.5f;  
+    [SerializeField] private float fixationDurationThreshold = 0.15f; 
 
     [Header("Focus Raycasting")]
     [SerializeField] private float gazeRayDistance = 50f;
-    [SerializeField] private LayerMask focusLayerMask = ~0; // all layers by default
+    [SerializeField] private LayerMask focusLayerMask = ~0; 
 
+    [Header("Distraction Detection")]
+    [SerializeField] private string primaryObjectName = "RedCube";
+
+    // Distraction tracking
+    private bool  isDistracted         = false;
+    private float distractionStartTime = 0f;
+    private int   distractionCount     = 0;
+    private float totalDistractionTime = 0f;
+    private string distractionTarget   = "None";
+
+    // Distraction CSV writer
+    private StreamWriter distractionWriter;
+    private string       distractionFilePath;
     // Internal state
     private string filePath;
     private StreamWriter writer;
@@ -73,10 +86,22 @@ public class EyeTrackingLogger : MonoBehaviour
             if (ui != null)
                 timerUIs[t.gameObject] = ui;
         }
-
-
+        
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
         string desktopPath = System.Environment.GetFolderPath(System.Environment.SpecialFolder.Desktop);
+
+        distractionFilePath = Path.Combine(desktopPath,
+            $"distractions_{timestamp}.csv");
+        distractionWriter = new StreamWriter(
+            distractionFilePath, false, Encoding.UTF8);
+        distractionWriter.WriteLine(
+            "distraction_number," +
+            "left_primary_at_s," +
+            "distracted_to_object," +
+            "returned_at_s," +
+            "distraction_duration_s"
+        );
+
         filePath = Path.Combine(desktopPath, $"{fileName}_{timestamp}.csv");
 
         if (eyePose != null)
@@ -207,7 +232,7 @@ public class EyeTrackingLogger : MonoBehaviour
             hitGameObject = singleHit.collider.gameObject;
 
         HandleGazeObject(hitGameObject);
-
+        DetectDistraction(primaryObject, timestamp);
 
         if (currentGazedObject != null && timerUIs.ContainsKey(currentGazedObject))
         {
@@ -334,6 +359,49 @@ public class EyeTrackingLogger : MonoBehaviour
         }
     }
 
+    void DetectDistraction(string currentObject, float timestamp)
+    {
+        bool onPrimary = currentObject == primaryObjectName;
+
+        if (!isDistracted && !onPrimary && currentObject != "None")
+        {
+            // Just got distracted — left primary object
+            isDistracted         = true;
+            distractionStartTime = Time.time;
+            distractionTarget    = currentObject;
+            Debug.Log($"[Distraction] Left {primaryObjectName} → {currentObject}");
+        }
+        else if (isDistracted && onPrimary)
+        {
+            // Returned to primary — distraction ended
+            float duration = Time.time - distractionStartTime;
+            totalDistractionTime += duration;
+            distractionCount++;
+
+            try
+            {
+                distractionWriter.WriteLine(
+                    $"{distractionCount}," +
+                    $"{distractionStartTime - sessionStartTime:F4}," +
+                    $"{distractionTarget}," +
+                    $"{Time.time - sessionStartTime:F4}," +
+                    $"{duration:F4}"
+                );
+                distractionWriter.Flush();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Distraction write error: {e.Message}");
+            }
+
+            Debug.Log($"[Distraction #{distractionCount}] " +
+                    $"Looked at {distractionTarget} for {duration:F2}s");
+
+            isDistracted      = false;
+            distractionTarget = "None";
+        }
+    }
+
     void OnDestroy()
     {
         if (writer != null)
@@ -342,9 +410,74 @@ public class EyeTrackingLogger : MonoBehaviour
             writer.Close();
             // Debug.Log($"[EyeTrackingLogger] File saved: {filePath}");
         }
+        if (distractionWriter != null)
+        {
+            distractionWriter.Flush();
+            distractionWriter.Close();
+        }
+        GenerateSessionSummary();
     }
 
+    void GenerateSessionSummary()
+    {
+        float totalSessionTime = Time.time - sessionStartTime;
+        
+        // Find most and least attended
+        string mostAttended = "None",  leastAttended = "None";
+        float  mostTime     = 0f,      leastTime     = float.MaxValue;
+        float  totalAttentionAllObjects = 0f;
 
+        foreach (var kvp in totalAttentionTime)
+            totalAttentionAllObjects += kvp.Value;
+
+        foreach (var kvp in totalAttentionTime)
+        {
+            if (kvp.Value > mostTime)
+            {
+                mostTime     = kvp.Value;
+                mostAttended = kvp.Key;
+            }
+            if (kvp.Value < leastTime)
+            {
+                leastTime     = kvp.Value;
+                leastAttended = kvp.Key;
+            }
+        }
+
+        // Build summary text
+        StringBuilder summary = new StringBuilder();
+        summary.AppendLine("========== SESSION SUMMARY ==========");
+        summary.AppendLine($"Date:             {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        summary.AppendLine($"Total Duration:   {totalSessionTime:F1}s");
+        summary.AppendLine($"Total Distractions: {distractionCount}");
+        summary.AppendLine($"Avg Distraction Duration: {(distractionCount > 0 ? totalDistractionTime / distractionCount : 0):F2}s");
+        summary.AppendLine("");
+        summary.AppendLine("--- Object Attention Breakdown ---");
+
+        foreach (var kvp in totalAttentionTime)
+        {
+            float percentage = totalAttentionAllObjects > 0
+                ? (kvp.Value / totalAttentionAllObjects) * 100f : 0f;
+            summary.AppendLine(
+                $"{kvp.Key,-20} {kvp.Value:F1}s  ({percentage:F1}%)");
+        }
+
+        summary.AppendLine("");
+        summary.AppendLine($"Most Attended:    {mostAttended} ({mostTime:F1}s)");
+        summary.AppendLine($"Least Attended:   {leastAttended} ({leastTime:F1}s)");
+        summary.AppendLine("=====================================");
+
+        // Print to Console
+        Debug.Log(summary.ToString());
+
+        // Save to Desktop
+        string desktopPath = Environment.GetFolderPath(
+                                Environment.SpecialFolder.Desktop);
+        string summaryPath = Path.Combine(desktopPath,
+            $"session_summary_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.txt");
+        File.WriteAllText(summaryPath, summary.ToString());
+        Debug.Log($"[Summary] Saved to: {summaryPath}");
+    }
     public void ForceSave()
     {
         writer?.Flush();
