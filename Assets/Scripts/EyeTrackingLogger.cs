@@ -18,7 +18,7 @@ public class EyeTrackingLogger : MonoBehaviour
         = new Dictionary<string, float>();
     private Dictionary<GameObject, Color> originalColors 
         = new Dictionary<GameObject, Color>();
-    private Dictionary<GameObject, GazeTimerUI> timerUIs 
+    private Dictionary<GameObject, GazeTimerUI> TimerUI 
         = new Dictionary<GameObject, GazeTimerUI>();
     [Header("Input")]
     [SerializeField] private InputActionReference eyePose;
@@ -84,7 +84,7 @@ public class EyeTrackingLogger : MonoBehaviour
 
             GazeTimerUI ui = t.GetComponentInChildren<GazeTimerUI>();
             if (ui != null)
-                timerUIs[t.gameObject] = ui;
+                TimerUI[t.gameObject] = ui;
         }
         
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
@@ -186,8 +186,14 @@ public class EyeTrackingLogger : MonoBehaviour
         {
             var lp = pupils[(int)XrEyePositionHTC.XR_EYE_POSITION_LEFT_HTC];
             var rp = pupils[(int)XrEyePositionHTC.XR_EYE_POSITION_RIGHT_HTC];
-            if (lp.isDiameterValid) leftPupil  = lp.pupilDiameter * 1000f; // convert m → mm
-            if (rp.isDiameterValid) rightPupil = rp.pupilDiameter * 1000f;
+            if (lp.isDiameterValid) leftPupil  = lp.pupilDiameter; // convert m → mm
+            if (rp.isDiameterValid) rightPupil = rp.pupilDiameter;
+            
+            if (lp.isDiameterValid && lp.pupilDiameter > 0.001f && lp.pupilDiameter < 0.02f)
+            leftPupil = lp.pupilDiameter;
+
+            if (rp.isDiameterValid && rp.pupilDiameter > 0.001f && rp.pupilDiameter < 0.02f)
+            rightPupil = rp.pupilDiameter;
         }
 
         XR_HTC_eye_tracker.Interop.GetEyeGeometricData(out XrSingleEyeGeometricDataHTC[] openness);
@@ -234,12 +240,12 @@ public class EyeTrackingLogger : MonoBehaviour
         HandleGazeObject(hitGameObject);
         DetectDistraction(primaryObject, timestamp);
 
-        if (currentGazedObject != null && timerUIs.ContainsKey(currentGazedObject))
+        if (currentGazedObject != null && TimerUI.ContainsKey(currentGazedObject))
         {
             float current = Time.time - gazeStartTime;
             float total   = totalAttentionTime.ContainsKey(currentGazedObject.name)
                             ? totalAttentionTime[currentGazedObject.name] : 0f;
-            timerUIs[currentGazedObject].UpdateTimer(current, total);
+            TimerUI[currentGazedObject].UpdateTimer(current, total);
         }
 
 
@@ -343,8 +349,8 @@ public class EyeTrackingLogger : MonoBehaviour
             if (totalAttentionTime.ContainsKey(currentGazedObject.name))
                 totalAttentionTime[currentGazedObject.name] += duration;
 
-            if (timerUIs.ContainsKey(currentGazedObject))
-                timerUIs[currentGazedObject].Hide();
+            if (TimerUI.ContainsKey(currentGazedObject))
+                TimerUI[currentGazedObject].Hide();
         }
 
         currentGazedObject = hitObject;

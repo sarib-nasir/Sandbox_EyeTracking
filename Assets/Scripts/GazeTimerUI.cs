@@ -3,13 +3,15 @@ using TMPro;
 
 public class GazeTimerUI : MonoBehaviour
 {
-    [SerializeField] public TextMeshProUGUI timerText;
+    [SerializeField] private TMP_Text timerText;
     private Camera mainCamera;
 
     void Start()
     {
+        timerText.text = "Looking...";
+        timerText.enabled = true;
         mainCamera = Camera.main;
-        Hide();
+        // Hide();
     }
 
     void LateUpdate()
